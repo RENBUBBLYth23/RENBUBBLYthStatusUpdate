@@ -1,420 +1,148 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RENBUBBLYth — Order Status</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzpozCIshrXaqfMU7SuhxWJx3tG8I-eQ8GbKL2JiaE4AlqeC7DDTCr35YYwDXcfODCB/exec';
 
-    :root {
-      --bg: #fdf8f5;
-      --surface: #ffffff;
-      --border: #e8e0d8;
-      --text: #2c2420;
-      --text-muted: #8c7d74;
-      --text-hint: #b8a89e;
-      --pink-bg: #fbeaf0;
-      --pink-text: #993556;
-      --amber-bg: #faeeda;
-      --amber-text: #854f0b;
-      --blue-bg: #e6f1fb;
-      --blue-text: #185fa5;
-      --green-bg: #eaf3de;
-      --green-text: #3b6d11;
+let sheetData = null;
+
+function loadData() {
+  return new Promise((resolve, reject) => {
+    if (sheetData) return resolve(sheetData);
+    const cbName = 'cb_' + Date.now();
+    const script = document.createElement('script');
+    script.src = SCRIPT_URL + '?callback=' + cbName;
+    script.onerror = () => reject(new Error('load error'));
+    window[cbName] = (data) => {
+      sheetData = data;
+      delete window[cbName];
+      document.body.removeChild(script);
+      resolve(data);
+    };
+    document.body.appendChild(script);
+  });
+}
+
+function getStatusClass(status) {
+  if (!status) return 'status-other';
+  const s = status.toString().toLowerCase();
+  if (s.includes('จัดส่ง') || s.includes('ส่งแล้ว') || s.includes('shipped') || s.includes('พัสดุ')) return 'status-shipping';
+  if (s.includes('สำเร็จ') || s.includes('เสร็จ') || s.includes('complete') || s.includes('received')) return 'status-done';
+  if (s.includes('รอ') || s.includes('pending') || s.includes('ยืนยัน') || s.includes('เตรียม') || s.includes('กด')) return 'status-pending';
+  return 'status-other';
+}
+
+function normalize(val) {
+  if (!val) return '';
+  return val.toString().toLowerCase().replace(/@/g, '').replace(/🌸/g, '').trim();
+}
+
+function matchQuery(rowStr, query) {
+  return normalize(rowStr).includes(normalize(query));
+}
+
+function findHeaderRow(rows) {
+  // หา row ที่มีคำว่า account หรือ ชื่อผู้สั่ง
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    const rowStr = rows[i].join(' ').toLowerCase();
+    if (rowStr.includes('account') || rowStr.includes('ชื่อผู้สั่ง') || rowStr.includes('หมายเลขออเดอร์')) {
+      return i;
     }
+  }
+  return 0;
+}
 
-    body {
-      font-family: 'Noto Sans Thai', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      padding: 2.5rem 1rem 4rem;
-    }
+function get(row, headers, keywords) {
+  const idx = headers.findIndex(h => keywords.some(k => normalize(h).includes(k)));
+  return idx >= 0 ? row[idx] : '';
+}
 
-    .header {
-      text-align: center;
-      margin-bottom: 2.5rem;
-    }
-
-    .header-badge {
-      display: inline-block;
-      font-size: 11px;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      border: 0.5px solid var(--border);
-      border-radius: 20px;
-      padding: 4px 16px;
-      margin-bottom: 14px;
-    }
-
-    .header h1 {
-      font-family: 'DM Serif Display', serif;
-      font-size: 32px;
-      font-weight: 400;
-      color: var(--text);
-      line-height: 1.2;
-      margin-bottom: 8px;
-    }
-
-    .header h1 span { font-style: italic; }
-
-    .header p {
-      font-size: 14px;
-      color: var(--text-muted);
-    }
-
-    .search-card {
-      background: var(--surface);
-      border: 0.5px solid var(--border);
-      border-radius: 16px;
-      padding: 1.5rem;
-      max-width: 560px;
-      margin: 0 auto 1.5rem;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-    }
-
-    .search-label {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-bottom: 10px;
-      display: block;
-    }
-
-    .search-row {
-      display: flex;
-      gap: 8px;
-    }
-
-    .search-row input {
-      flex: 1;
-      font-family: 'Noto Sans Thai', sans-serif;
-      font-size: 14px;
-      padding: 10px 14px;
-      border: 0.5px solid var(--border);
-      border-radius: 10px;
-      background: var(--bg);
-      color: var(--text);
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    .search-row input:focus {
-      border-color: #c9a8b0;
-    }
-
-    .search-row button {
-      font-family: 'Noto Sans Thai', sans-serif;
-      font-size: 13px;
-      padding: 10px 20px;
-      border: 0.5px solid var(--border);
-      border-radius: 10px;
-      background: var(--surface);
-      color: var(--text);
-      cursor: pointer;
-      white-space: nowrap;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: background 0.15s;
-    }
-
-    .search-row button:hover { background: var(--bg); }
-    .search-row button:active { transform: scale(0.98); }
-
-    .hint {
-      font-size: 11px;
-      color: var(--text-hint);
-      margin-top: 8px;
-      text-align: center;
-    }
-
-    .results-area {
-      max-width: 560px;
-      margin: 0 auto;
-    }
-
-    .loading-msg {
-      text-align: center;
-      font-size: 13px;
-      color: var(--text-muted);
-      padding: 2rem;
-    }
-
-    .no-result {
-      text-align: center;
-      font-size: 13px;
-      color: var(--text-muted);
-      padding: 1.5rem;
-      background: var(--surface);
-      border: 0.5px solid var(--border);
-      border-radius: 12px;
-    }
-
-    .result-card {
-      background: var(--surface);
-      border: 0.5px solid var(--border);
-      border-radius: 16px;
-      padding: 1.25rem 1.5rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
-    }
-
-    .result-card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-      padding-bottom: 10px;
-      border-bottom: 0.5px solid var(--border);
-    }
-
-    .order-id {
-      font-size: 13px;
-      font-weight: 500;
-    }
-
-    .sheet-tag {
-      font-size: 10px;
-      padding: 3px 10px;
-      border-radius: 20px;
-      background: var(--bg);
-      color: var(--text-muted);
-      border: 0.5px solid var(--border);
-    }
-
-    .result-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding: 5px 0;
-      font-size: 13px;
-      gap: 12px;
-    }
-
-    .result-label {
-      color: var(--text-muted);
-      white-space: nowrap;
-      flex-shrink: 0;
-      min-width: 90px;
-    }
-
-    .result-value {
-      color: var(--text);
-      text-align: right;
-      word-break: break-word;
-    }
-
-    .status-pill {
-      display: inline-block;
-      font-size: 12px;
-      padding: 3px 12px;
-      border-radius: 20px;
-      font-weight: 500;
-    }
-
-    .status-pending  { background: var(--amber-bg); color: var(--amber-text); }
-    .status-shipping { background: var(--blue-bg);  color: var(--blue-text);  }
-    .status-done     { background: var(--green-bg); color: var(--green-text); }
-    .status-other    { background: var(--bg);       color: var(--text-muted); }
-
-    .divider {
-      height: 0.5px;
-      background: var(--border);
-      margin: 6px 0;
-    }
-
-    .deco-line {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      justify-content: center;
-      margin: 2.5rem auto 0;
-      max-width: 220px;
-    }
-
-    .deco-line span {
-      font-size: 10px;
-      color: var(--text-hint);
-      letter-spacing: 0.12em;
-    }
-
-    .deco-line hr {
-      flex: 1;
-      border: none;
-      border-top: 0.5px solid var(--border);
-    }
-
-    @media (max-width: 480px) {
-      .header h1 { font-size: 26px; }
-      .search-card { padding: 1.25rem; }
-      .result-card { padding: 1rem 1.25rem; }
-    }
-  </style>
-</head>
-<body>
-
-  <div class="header">
-    <div class="header-badge">RENBUBBLYth</div>
-    <h1>Order <span>Status</span></h1>
-    <p>ตรวจสอบสถานะออเดอร์ของคุณ</p>
-  </div>
-
-  <div class="search-card">
-    <span class="search-label">ค้นหาด้วย Twitter @, ชื่อ หรือเลขออเดอร์/บิล</span>
-    <div class="search-row">
-      <input type="text" id="searchInput" placeholder="เช่น @renbblyth23 หรือ ROLO1" />
-      <button onclick="doSearch()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        ค้นหา
-      </button>
+function renderSheet1(row, headers, sheetName) {
+  const orderId   = get(row, headers, ['หมายเลขออเดอร์','เลขออเดอร์']);
+  const account   = get(row, headers, ['account']);
+  const statusRaw = get(row, headers, ['สถานะ']);
+  const amount    = get(row, headers, ['ยอดชำระ','ยอด']);
+  const tracking  = get(row, headers, ['พัสดุ','หมายเลขพัสดุ']);
+  const versions  = [];
+  ['a version','b version','c version','set version'].forEach(v => {
+    const idx = headers.findIndex(h => normalize(h).includes(v));
+    if (idx >= 0 && row[idx]) versions.push(headers[idx] + ' x' + row[idx]);
+  });
+  return `<div class="result-card">
+    <div class="result-card-header">
+      <span class="order-id">${normalize(orderId.toString()) || '-'}</span>
+      <span class="sheet-tag">${sheetName}</span>
     </div>
-    <p class="hint">ใส่บางส่วนของชื่อก็ได้ค่ะ</p>
-  </div>
+    ${account ? `<div class="result-row"><span class="result-label">Account</span><span class="result-value">${account}</span></div>` : ''}
+    ${versions.length ? `<div class="result-row"><span class="result-label">รายการ</span><span class="result-value">${versions.join(', ')}</span></div>` : ''}
+    ${amount ? `<div class="result-row"><span class="result-label">ยอดชำระ</span><span class="result-value">${amount} บาท</span></div>` : ''}
+    <div class="divider"></div>
+    <div class="result-row">
+      <span class="result-label">สถานะ</span>
+      <span class="result-value"><span class="status-pill ${getStatusClass(statusRaw)}">${statusRaw || 'ไม่พบสถานะ'}</span></span>
+    </div>
+    ${tracking ? `<div class="result-row"><span class="result-label">เลขพัสดุ</span><span class="result-value">${tracking}</span></div>` : ''}
+  </div>`;
+}
 
-  <div class="results-area" id="results"></div>
-
-  <div class="deco-line">
-    <hr><span>RENBUBBLYTHSHOP</span><hr>
-  </div>
-
-  <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzpozCIshrXaqfMU7SuhxWJx3tG8I-eQ8GbKL2JiaE4AlqeC7DDTCr35YYwDXcfODCB/exec';
-
-    let sheetData = null;
-
-    async function loadData() {
-      if (sheetData) return sheetData;
-      const res = await fetch(SCRIPT_URL);
-      sheetData = await res.json();
-      return sheetData;
+function renderSheet2(row, headers, sheetName) {
+  const orderId   = get(row, headers, ['หมายเลขสินค้า','หมายเลขบิล','หมายเลข']);
+  const name      = get(row, headers, ['ชื่อผู้สั่งซื้อ','ชื่อผู้สั่ง','ชื่อ']);
+  const address   = get(row, headers, ['ที่อยู่']);
+  const statusRaw = get(row, headers, ['สถานะ']);
+  const amount    = get(row, headers, ['ยอดชำระ','ยอด']);
+  const tracking  = get(row, headers, ['พัสดุ','tracking']);
+  const items = [];
+  headers.forEach((h, i) => {
+    const hn = normalize(h);
+    const skip = ['ลำดับ','หมายเลข','ชื่อ','ที่อยู่','ยอด','สถานะ','พัสดุ','หมายเหตุ','เบอร์','โทร'];
+    if (!skip.some(s => hn.includes(s)) && row[i] && row[i] !== '' && row[i] !== 0) {
+      items.push(h + ' x' + row[i]);
     }
+  });
+  return `<div class="result-card">
+    <div class="result-card-header">
+      <span class="order-id">${orderId || '-'}</span>
+      <span class="sheet-tag">${sheetName}</span>
+    </div>
+    ${name ? `<div class="result-row"><span class="result-label">ชื่อ</span><span class="result-value">${name}</span></div>` : ''}
+    ${items.length ? `<div class="result-row"><span class="result-label">รายการ</span><span class="result-value">${items.join(', ')}</span></div>` : ''}
+    ${address ? `<div class="result-row"><span class="result-label">ที่อยู่</span><span class="result-value">${address}</span></div>` : ''}
+    ${amount ? `<div class="result-row"><span class="result-label">ยอดชำระ</span><span class="result-value">${amount} บาท</span></div>` : ''}
+    <div class="divider"></div>
+    <div class="result-row">
+      <span class="result-label">สถานะ</span>
+      <span class="result-value"><span class="status-pill ${getStatusClass(statusRaw)}">${statusRaw || 'ไม่พบสถานะ'}</span></span>
+    </div>
+    ${tracking ? `<div class="result-row"><span class="result-label">เลขพัสดุ</span><span class="result-value">${tracking}</span></div>` : ''}
+  </div>`;
+}
 
-    function getStatusClass(status) {
-      if (!status) return 'status-other';
-      const s = status.toString().toLowerCase();
-      if (s.includes('จัดส่ง') || s.includes('ส่งแล้ว') || s.includes('shipped') || s.includes('พัสดุ')) return 'status-shipping';
-      if (s.includes('สำเร็จ') || s.includes('เสร็จ') || s.includes('complete') || s.includes('received')) return 'status-done';
-      if (s.includes('รอ') || s.includes('pending') || s.includes('ยืนยัน') || s.includes('เตรียม') || s.includes('กด')) return 'status-pending';
-      return 'status-other';
-    }
-
-    function normalize(val) {
-      if (!val) return '';
-      return val.toString().toLowerCase().replace(/@/g, '').trim();
-    }
-
-    function matchQuery(val, query) {
-      return normalize(val).includes(normalize(query));
-    }
-
-    function renderSheet1(row, headers, sheetName) {
-      const get = (keywords) => {
-        const idx = headers.findIndex(h => keywords.some(k => normalize(h).includes(k)));
-        return idx >= 0 ? row[idx] : '';
-      };
-      const orderId  = get(['หมายเลขออเดอร์','เลขออเดอร์','order']);
-      const account  = get(['account','twitter','ชื่อ']);
-      const statusRaw = get(['สถานะ']);
-      const amount   = get(['ยอดชำระ','ยอด']);
-      const tracking = get(['พัสดุ','tracking','เลขพัสดุ']);
-      const versions = [];
-      ['a version','b version','c version','set version'].forEach(v => {
-        const idx = headers.findIndex(h => normalize(h).includes(v));
-        if (idx >= 0 && row[idx]) versions.push(`${headers[idx]} x${row[idx]}`);
-      });
-      return `
-        <div class="result-card">
-          <div class="result-card-header">
-            <span class="order-id">${orderId || '-'}</span>
-            <span class="sheet-tag">${sheetName}</span>
-          </div>
-          ${account  ? `<div class="result-row"><span class="result-label">Account</span><span class="result-value">${account}</span></div>` : ''}
-          ${versions.length ? `<div class="result-row"><span class="result-label">รายการ</span><span class="result-value">${versions.join(', ')}</span></div>` : ''}
-          ${amount   ? `<div class="result-row"><span class="result-label">ยอดชำระ</span><span class="result-value">${amount} บาท</span></div>` : ''}
-          <div class="divider"></div>
-          <div class="result-row">
-            <span class="result-label">สถานะ</span>
-            <span class="result-value"><span class="status-pill ${getStatusClass(statusRaw)}">${statusRaw || 'ไม่พบสถานะ'}</span></span>
-          </div>
-          ${tracking ? `<div class="result-row"><span class="result-label">เลขพัสดุ</span><span class="result-value">${tracking}</span></div>` : ''}
-        </div>`;
-    }
-
-    function renderSheet2(row, headers, sheetName) {
-      const get = (keywords) => {
-        const idx = headers.findIndex(h => keywords.some(k => normalize(h).includes(k)));
-        return idx >= 0 ? row[idx] : '';
-      };
-      const orderId  = get(['หมายเลขสินค้า','หมายเลขบิล','หมายเลข']);
-      const name     = get(['ชื่อผู้สั่ง','ชื่อ']);
-      const address  = get(['ที่อยู่']);
-      const statusRaw = get(['สถานะ']);
-      const amount   = get(['ยอดชำระ','ยอด']);
-      const tracking = get(['พัสดุ','tracking']);
-      const items = [];
-      headers.forEach((h, i) => {
-        const hn = normalize(h);
-        const skip = ['ลำดับ','หมายเลข','ชื่อ','ที่อยู่','ยอด','สถานะ','พัสดุ','หมายเหตุ','เบอร์','โทร'];
-        if (!skip.some(s => hn.includes(s)) && row[i] && row[i] !== '' && row[i] !== 0) {
-          items.push(`${h} x${row[i]}`);
+async function doSearch() {
+  const query = document.getElementById('searchInput').value.trim();
+  const resultsEl = document.getElementById('results');
+  if (!query) return;
+  resultsEl.innerHTML = '<div class="loading-msg">กำลังค้นหา...</div>';
+  try {
+    const data = await loadData();
+    const found = [];
+    Object.entries(data).forEach(([sheetName, rows]) => {
+      if (!rows || rows.length < 2) return;
+      const headerIdx = findHeaderRow(rows);
+      const headers = rows[headerIdx].map(h => h ? h.toString() : '');
+      const isSheet2 = sheetName.toLowerCase().includes('cuteness') || headers.some(h => normalize(h).includes('ที่อยู่'));
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.every(c => !c)) continue; // ข้าม row ว่าง
+        if (matchQuery(row.join(' '), query)) {
+          found.push(isSheet2 ? renderSheet2(row, headers, sheetName) : renderSheet1(row, headers, sheetName));
         }
-      });
-      return `
-        <div class="result-card">
-          <div class="result-card-header">
-            <span class="order-id">${orderId || '-'}</span>
-            <span class="sheet-tag">${sheetName}</span>
-          </div>
-          ${name    ? `<div class="result-row"><span class="result-label">ชื่อ</span><span class="result-value">${name}</span></div>` : ''}
-          ${items.length ? `<div class="result-row"><span class="result-label">รายการ</span><span class="result-value">${items.join(', ')}</span></div>` : ''}
-          ${address ? `<div class="result-row"><span class="result-label">ที่อยู่</span><span class="result-value">${address}</span></div>` : ''}
-          ${amount  ? `<div class="result-row"><span class="result-label">ยอดชำระ</span><span class="result-value">${amount} บาท</span></div>` : ''}
-          <div class="divider"></div>
-          <div class="result-row">
-            <span class="result-label">สถานะ</span>
-            <span class="result-value"><span class="status-pill ${getStatusClass(statusRaw)}">${statusRaw || 'ไม่พบสถานะ'}</span></span>
-          </div>
-          ${tracking ? `<div class="result-row"><span class="result-label">เลขพัสดุ</span><span class="result-value">${tracking}</span></div>` : ''}
-        </div>`;
-    }
-
-    async function doSearch() {
-      const query = document.getElementById('searchInput').value.trim();
-      const resultsEl = document.getElementById('results');
-      if (!query) return;
-      resultsEl.innerHTML = '<div class="loading-msg">กำลังค้นหา...</div>';
-      try {
-        const data = await loadData();
-        let found = [];
-        Object.entries(data).forEach(([sheetName, rows]) => {
-          if (!rows || rows.length < 2) return;
-          const headers = rows[0].map(h => h ? h.toString() : '');
-          for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-            if (matchQuery(row.join(' '), query)) {
-              const isSheet2 = sheetName.toLowerCase().includes('cuteness') || headers.some(h => normalize(h).includes('ที่อยู่'));
-              found.push(isSheet2 ? renderSheet2(row, headers, sheetName) : renderSheet1(row, headers, sheetName));
-            }
-          }
-        });
-        if (found.length === 0) {
-          resultsEl.innerHTML = '<div class="no-result">ไม่พบข้อมูลค่ะ ลองตรวจสอบชื่อหรือเลขออเดอร์อีกครั้งนะคะ</div>';
-        } else {
-          resultsEl.innerHTML = found.join('');
-        }
-      } catch(e) {
-        resultsEl.innerHTML = '<div class="no-result">เกิดข้อผิดพลาดในการโหลดข้อมูลค่ะ กรุณาลองใหม่อีกครั้ง</div>';
       }
-    }
-
-    document.getElementById('searchInput').addEventListener('keydown', e => {
-      if (e.key === 'Enter') doSearch();
     });
-  </script>
-</body>
-</html>
+    resultsEl.innerHTML = found.length
+      ? found.join('')
+      : '<div class="no-result">ไม่พบข้อมูลค่ะ ลองตรวจสอบชื่อหรือเลขออเดอร์อีกครั้งนะคะ</div>';
+  } catch(e) {
+    resultsEl.innerHTML = '<div class="no-result">เกิดข้อผิดพลาดในการโหลดข้อมูลค่ะ กรุณาลองใหม่อีกครั้ง</div>';
+  }
+}
+
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
