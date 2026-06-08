@@ -71,8 +71,7 @@
   <div class="deco-line"><hr><span>RENBUBBLYTHSHOP</span><hr></div>
 
   <script>
-    // ถ้า deploy Apps Script ใหม่ เปลี่ยน URL ตรงนี้
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzpozCIshrXaqfMU7SuhxWJx3tG8I-eQ8GbKL2JiaE4AlqeC7DDTCr35YYwDXcfODCB/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyp7f2CnQZiFLLgRVoIItKBX3ieoYXOK2hPxSIYGQbAE8d35u-alV41oZKBMLbvX7LD/exec';
 
     function normalize(val) {
       if (!val) return '';
@@ -151,16 +150,17 @@
 
       const cbName = 'cb_' + Date.now();
       const script = document.createElement('script');
+
       const timer = setTimeout(() => {
         resultsEl.innerHTML = '<div class="no-result">โหลดนานเกินไปค่ะ กรุณาลองใหม่อีกครั้ง</div>';
-        document.body.removeChild(script);
+        if (document.body.contains(script)) document.body.removeChild(script);
         delete window[cbName];
       }, 15000);
 
       window[cbName] = (data) => {
         clearTimeout(timer);
         delete window[cbName];
-        document.body.removeChild(script);
+        if (document.body.contains(script)) document.body.removeChild(script);
         if (!data || data.length === 0) {
           resultsEl.innerHTML = '<div class="no-result">ไม่พบข้อมูลค่ะ ลองตรวจสอบชื่อหรือเลขออเดอร์อีกครั้งนะคะ</div>';
         } else {
@@ -168,12 +168,13 @@
         }
       };
 
-      script.src = SCRIPT_URL + '?callback=' + cbName + '&q=' + encodeURIComponent(query);
       script.onerror = () => {
         clearTimeout(timer);
         resultsEl.innerHTML = '<div class="no-result">เกิดข้อผิดพลาดค่ะ กรุณาลองใหม่อีกครั้ง</div>';
         delete window[cbName];
       };
+
+      script.src = SCRIPT_URL + '?callback=' + cbName + '&q=' + encodeURIComponent(query);
       document.body.appendChild(script);
     }
 
