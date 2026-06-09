@@ -71,7 +71,44 @@
   <div class="deco-line"><hr><span>RENBUBBLYTHSHOP</span><hr></div>
 
   <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyp7f2CnQZiFLLgRVoIItKBX3ieoYXOK2hPxSIYGQbAE8d35u-alV41oZKBMLbvX7LD/exec';
+    // ======= ตั้งค่า Sheet ID และ gid ของแต่ละชีต =======
+    const SHEET_ID = '15_loykx8PlnvWioDynhbk0qH7voRj_lsu-Imzkn6AB0';
+    const SHEETS = [
+      { name: 'PRE-ORDER RENJUN ALBUM : Echoes between Us', gid: '698312743' },
+      { name: '★ PRE-ORDER : Cuteness Overload', gid: '139530493' }
+    ];
+    // =====================================================
+
+    function csvUrl(gid) {
+      return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
+    }
+
+    function parseCSV(text) {
+      const rows = [];
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const row = [];
+        let cur = '', inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"') { inQ = !inQ; }
+          else if (c === ',' && !inQ) { row.push(cur.trim()); cur = ''; }
+          else { cur += c; }
+        }
+        row.push(cur.trim());
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    function findHeaderRow(rows) {
+      for (let i = 0; i < Math.min(rows.length, 6); i++) {
+        const r = rows[i].join(' ').toLowerCase();
+        if (r.includes('account') || r.includes('ชื่อผู้สั่ง') || r.includes('หมายเลขออเดอร์')) return i;
+      }
+      return 0;
+    }
 
     function normalize(val) {
       if (!val) return '';
@@ -88,94 +125,103 @@
     }
 
     function getVal(row, headers, keywords) {
-      const idx = headers.findIndex(h => keywords.some(k => h.toLowerCase().includes(k)));
-      return idx >= 0 ? row[idx] : '';
+      const idx = headers.findIndex(h => keywords.some(k => normalize(h).toLowerCase().includes(k)));
+      return idx >= 0 ? (row[idx] || '') : '';
     }
 
-    function renderResult(item) {
-      const { sheet, headers, row } = item;
-      const isSheet2 = sheet.toLowerCase().includes('cuteness') || headers.some(h => h.includes('ที่อยู่'));
-
-      if (isSheet2) {
-        const orderId   = getVal(row, headers, ['หมายเลขสินค้า','หมายเลขบิล','หมายเลข']);
-        const name      = getVal(row, headers, ['ชื่อผู้สั่งซื้อ','ชื่อผู้สั่ง','ชื่อ']);
-        const address   = getVal(row, headers, ['ที่อยู่']);
-        const statusRaw = getVal(row, headers, ['สถานะ']);
-        const amount    = getVal(row, headers, ['ยอดชำระ','ยอด']);
-        const tracking  = getVal(row, headers, ['พัสดุ','tracking']);
-        const items = [];
-        headers.forEach((h, i) => {
-          const hn = h.toLowerCase();
-          const skip = ['ลำดับ','หมายเลข','ชื่อ','ที่อยู่','ยอด','สถานะ','พัสดุ','หมายเหตุ','เบอร์','โทร'];
-          if (!skip.some(s => hn.includes(s)) && row[i] && row[i] !== '' && row[i] !== 0) items.push(h + ' x' + row[i]);
-        });
-        return `<div class="result-card">
-          <div class="result-card-header"><span class="order-id">${orderId || '-'}</span><span class="sheet-tag">${sheet}</span></div>
-          ${name ? `<div class="result-row"><span class="result-label">ชื่อ</span><span class="result-value">${name}</span></div>` : ''}
-          ${items.length ? `<div class="result-row"><span class="result-label">รายการ</span><span class="result-value">${items.join(', ')}</span></div>` : ''}
-          ${address ? `<div class="result-row"><span class="result-label">ที่อยู่</span><span class="result-value">${address}</span></div>` : ''}
-          ${amount ? `<div class="result-row"><span class="result-label">ยอดชำระ</span><span class="result-value">${amount} บาท</span></div>` : ''}
-          <div class="divider"></div>
-          <div class="result-row"><span class="result-label">สถานะ</span><span class="result-value"><span class="status-pill ${getStatusClass(statusRaw)}">${statusRaw || 'ไม่พบสถานะ'}</span></span></div>
-          ${tracking ? `<div class="result-row"><span class="result-label">เลขพัสดุ</span><span class="result-value">${tracking}</span></div>` : ''}
-        </div>`;
-      } else {
-        const orderId   = normalize(getVal(row, headers, ['หมายเลขออเดอร์','เลขออเดอร์']));
-        const account   = getVal(row, headers, ['account']);
-        const statusRaw = getVal(row, headers, ['สถานะ']);
-        const amount    = getVal(row, headers, ['ยอดชำระ','ยอด']);
-        const tracking  = getVal(row, headers, ['พัสดุ','หมายเลขพัสดุ']);
-        const versions  = [];
-        ['a version','b version','c version','set version'].forEach(v => {
-          const idx = headers.findIndex(h => h.toLowerCase().includes(v));
-          if (idx >= 0 && row[idx]) versions.push(headers[idx] + ' x' + row[idx]);
-        });
-        return `<div class="result-card">
-          <div class="result-card-header"><span class="order-id">${orderId || '-'}</span><span class="sheet-tag">${sheet}</span></div>
-          ${account ? `<div class="result-row"><span class="result-label">Account</span><span class="result-value">${account}</span></div>` : ''}
-          ${versions.length ? `<div class="result-row"><span class="result-label">รายการ</span><span class="result-value">${versions.join(', ')}</span></div>` : ''}
-          ${amount ? `<div class="result-row"><span class="result-label">ยอดชำระ</span><span class="result-value">${amount} บาท</span></div>` : ''}
-          <div class="divider"></div>
-          <div class="result-row"><span class="result-label">สถานะ</span><span class="result-value"><span class="status-pill ${getStatusClass(statusRaw)}">${statusRaw || 'ไม่พบสถานะ'}</span></span></div>
-          ${tracking ? `<div class="result-row"><span class="result-label">เลขพัสดุ</span><span class="result-value">${tracking}</span></div>` : ''}
-        </div>`;
-      }
+    function renderEchoes(row, headers, sheetName) {
+      const orderId   = normalize(getVal(row, headers, ['หมายเลขออเดอร์','เลขออเดอร์']));
+      const account   = getVal(row, headers, ['account']);
+      const statusRaw = getVal(row, headers, ['สถานะ']);
+      const amount    = getVal(row, headers, ['ยอดชำระ','ยอด']);
+      const tracking  = getVal(row, headers, ['พัสดุ','หมายเลขพัสดุ']);
+      const versions  = [];
+      ['a version','b version','c version','set version'].forEach(v => {
+        const idx = headers.findIndex(h => normalize(h).toLowerCase().includes(v));
+        if (idx >= 0 && row[idx] && row[idx] !== '0') versions.push(headers[idx] + ' x' + row[idx]);
+      });
+      return `<div class="result-card">
+        <div class="result-card-header"><span class="order-id">${orderId || '-'}</span><span class="sheet-tag">Echoes between Us</span></div>
+        ${account ? `<div class="result-row"><span class="result-label">Account</span><span class="result-value">${account}</span></div>` : ''}
+        ${versions.length ? `<div class="result-row"><span class="result-label">รายการ</span><span class="result-value">${versions.join(', ')}</span></div>` : ''}
+        ${amount ? `<div class="result-row"><span class="result-label">ยอดชำระ</span><span class="result-value">${amount} บาท</span></div>` : ''}
+        <div class="divider"></div>
+        <div class="result-row"><span class="result-label">สถานะ</span><span class="result-value"><span class="status-pill ${getStatusClass(statusRaw)}">${statusRaw || 'ไม่พบสถานะ'}</span></span></div>
+        ${tracking ? `<div class="result-row"><span class="result-label">เลขพัสดุ</span><span class="result-value">${tracking}</span></div>` : ''}
+      </div>`;
     }
 
-    function doSearch() {
+    function renderCuteness(row, headers, sheetName) {
+      const orderId   = getVal(row, headers, ['หมายเลขสินค้า','หมายเลขบิล','หมายเลข']);
+      const name      = getVal(row, headers, ['ชื่อผู้สั่งซื้อ','ชื่อผู้สั่ง','ชื่อ']);
+      const address   = getVal(row, headers, ['ที่อยู่']);
+      const statusRaw = getVal(row, headers, ['สถานะ']);
+      const amount    = getVal(row, headers, ['ยอดชำระ','ยอด']);
+      const tracking  = getVal(row, headers, ['พัสดุ','tracking']);
+      const items = [];
+      headers.forEach((h, i) => {
+        const hn = normalize(h).toLowerCase();
+        const skip = ['ลำดับ','หมายเลข','ชื่อ','ที่อยู่','ยอด','สถานะ','พัสดุ','หมายเหตุ','เบอร์','โทร','เขต','จังหวัด','รหัส'];
+        if (!skip.some(s => hn.includes(s)) && row[i] && row[i] !== '' && row[i] !== '0') {
+          items.push(h + ' x' + row[i]);
+        }
+      });
+      return `<div class="result-card">
+        <div class="result-card-header"><span class="order-id">${orderId || '-'}</span><span class="sheet-tag">Cuteness Overload</span></div>
+        ${name ? `<div class="result-row"><span class="result-label">ชื่อ</span><span class="result-value">${name}</span></div>` : ''}
+        ${items.length ? `<div class="result-row"><span class="result-label">รายการ</span><span class="result-value">${items.join(', ')}</span></div>` : ''}
+        ${address ? `<div class="result-row"><span class="result-label">ที่อยู่</span><span class="result-value">${address}</span></div>` : ''}
+        ${amount ? `<div class="result-row"><span class="result-label">ยอดชำระ</span><span class="result-value">${amount} บาท</span></div>` : ''}
+        <div class="divider"></div>
+        <div class="result-row"><span class="result-label">สถานะ</span><span class="result-value"><span class="status-pill ${getStatusClass(statusRaw)}">${statusRaw || 'ไม่พบสถานะ'}</span></span></div>
+        ${tracking ? `<div class="result-row"><span class="result-label">เลขพัสดุ</span><span class="result-value">${tracking}</span></div>` : ''}
+      </div>`;
+    }
+
+    async function fetchSheet(gid) {
+      const url = csvUrl(gid);
+      const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxy);
+      if (!res.ok) throw new Error('fetch failed');
+      return await res.text();
+    }
+
+    async function doSearch() {
       const query = document.getElementById('searchInput').value.trim();
       const resultsEl = document.getElementById('results');
       if (!query) return;
+
       resultsEl.innerHTML = '<div class="loading-msg">กำลังค้นหา...</div>';
+      const q = normalize(query).toLowerCase();
 
-      const cbName = 'cb_' + Date.now();
-      const script = document.createElement('script');
+      try {
+        const found = [];
 
-      const timer = setTimeout(() => {
-        resultsEl.innerHTML = '<div class="no-result">โหลดนานเกินไปค่ะ กรุณาลองใหม่อีกครั้ง</div>';
-        if (document.body.contains(script)) document.body.removeChild(script);
-        delete window[cbName];
-      }, 15000);
+        for (const sheet of SHEETS) {
+          const csv = await fetchSheet(sheet.gid);
+          const rows = parseCSV(csv);
+          const headerIdx = findHeaderRow(rows);
+          const headers = rows[headerIdx].map(h => h || '');
+          const isCuteness = sheet.gid === '139530493';
 
-      window[cbName] = (data) => {
-        clearTimeout(timer);
-        delete window[cbName];
-        if (document.body.contains(script)) document.body.removeChild(script);
-        if (!data || data.length === 0) {
+          for (let i = headerIdx + 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (row.every(c => !c || c === '')) continue;
+            const rowStr = normalize(row.join(' ')).toLowerCase();
+            if (rowStr.includes(q)) {
+              found.push(isCuteness ? renderCuteness(row, headers, sheet.name) : renderEchoes(row, headers, sheet.name));
+            }
+          }
+        }
+
+        if (found.length === 0) {
           resultsEl.innerHTML = '<div class="no-result">ไม่พบข้อมูลค่ะ ลองตรวจสอบชื่อหรือเลขออเดอร์อีกครั้งนะคะ</div>';
         } else {
-          resultsEl.innerHTML = data.map(renderResult).join('');
+          resultsEl.innerHTML = found.join('');
         }
-      };
-
-      script.onerror = () => {
-        clearTimeout(timer);
+      } catch(e) {
         resultsEl.innerHTML = '<div class="no-result">เกิดข้อผิดพลาดค่ะ กรุณาลองใหม่อีกครั้ง</div>';
-        delete window[cbName];
-      };
-
-      script.src = SCRIPT_URL + '?callback=' + cbName + '&q=' + encodeURIComponent(query);
-      document.body.appendChild(script);
+      }
     }
 
     document.getElementById('searchInput').addEventListener('keydown', e => {
